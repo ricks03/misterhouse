@@ -19,6 +19,8 @@
 #Age needs to be calculated in the polling loop while generating speech
 #Threshold check marks the item for speech.  Then "read" will speak all items
 #  marked for speech and "get" will speak new items that are marked for speech.
+# 190828 RS updating for new URL and CSV
+# 201031 More updating for USGS format
 
 use strict;
 
@@ -102,13 +104,19 @@ if ( $parms{d} ) {
 }
 
 unlink $f_cnss_merged_txt;
-my $getURLcmd = 'net_ftp -passive 1 -command get -server hazards.cr.usgs.gov ';
-$getURLcmd .= ' -user anonymous -password anonymous';
-system( $getURLcmd . " -file $f_cnss_merged_txt -file_remote cnss/cnss_14.fing " );
+#190828 RS
+# my $getURLcmd = 'net_ftp -passive 1 -command get -server hazards.cr.usgs.gov ';
+# $getURLcmd .= ' -user anonymous -password anonymous';
+# system( $getURLcmd . " -file $f_cnss_merged_txt -file_remote cnss/cnss_14.fing " );
+
+my $USGS_URL='http://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.csv';
+my $getURLcmd = 'get_url';
+system( $getURLcmd . " -ua $USGS_URL $f_cnss_merged_txt" );
 
 unless ( open CNSS, $f_cnss_merged_txt ) {
-    die "$Pgm_Name: Failed to retrieve file from USGS\n";
+    die "$Pgm_Name: Failed to retrieve file from USGS for $USGS_URL to $f_cnss_merged_txt . Command: $getURLcmd\n";
 }
+
 my @txtFile = <CNSS>;
 close CNSS;
 print( "$Pgm_Name: read " . scalar(@txtFile) . " entries\n" ) if $parms{v};
@@ -122,12 +130,12 @@ my %DBMsync;
 #Key format -> gmt:lat:lon
 foreach $line (@txtFile) {
 
-    #  print("$Pgm_Name: considering event -> $line") if $parms{v};
+    print("$Pgm_Name: considering event -> $line") if $parms{v};
 
     if ( $event = parse_quake($line) ) {
         $key = join( ':', @{$event}[ 0 .. 2 ] );
 
-        #  print "\$key: " . $key . "\n";
+        print "\$key: " . $key . "\n";
 
         if ( !exists( $DBM{$key} ) ) {
 
@@ -191,20 +199,21 @@ foreach $line (@txtFile) {
 #calculate the image file name for the first new entry
 #  0   1   2    3      4        5      6         7       8     9
 #[gmt,lat,lon,depth,magnitude,source,location,distance,speak,spoken]
-if ( $keyNewest ne "" ) {
-    @dbmEvent = split( $;, $DBM{$keyNewest} );
-    my $long_reso =
-      abs( 5 * round( $dbmEvent[1] / 5 ) ) > 45
-      ? ( abs( 5 * round( $dbmEvent[1] / 5 ) ) > 65 ? 20 : 10 )
-      : 5;
-    my $image =
-        'http://earthquake.usgs.gov/recenteqsww/Maps/10/'
-      . $long_reso * round( ( $dbmEvent[2] < 0 ? 360 + $dbmEvent[2] : $dbmEvent[2] ) / $long_reso ) . '_'
-      . 5 * round( $dbmEvent[1] / 5 ) . '.gif';
-    unlink $f_earthquakes_gif;
-    $getURLcmd = "get_url " . ( $parms{v} ? "" : "-quiet" );
-    system( $getURLcmd . " $image $f_earthquakes_gif" );
-}
+#  Rick removing as we no longer have images.
+# if ( $keyNewest ne "" ) {
+#     @dbmEvent = split( $;, $DBM{$keyNewest} );
+#     my $long_reso =
+#       abs( 5 * round( $dbmEvent[1] / 5 ) ) > 45
+#       ? ( abs( 5 * round( $dbmEvent[1] / 5 ) ) > 65 ? 20 : 10 )
+#       : 5;
+#     my $image =
+#         'http://earthquake.usgs.gov/recenteqsww/Maps/10/'
+#       . $long_reso * round( ( $dbmEvent[2] < 0 ? 360 + $dbmEvent[2] : $dbmEvent[2] ) / $long_reso ) . '_'
+#       . 5 * round( $dbmEvent[1] / 5 ) . '.gif';
+#     unlink $f_earthquakes_gif;
+#     $getURLcmd = "get_url " . ( $parms{v} ? "" : "-quiet" );
+#     system( $getURLcmd . " $image $f_earthquakes_gif" );
+#}
 
 #Purge entries not in %DBMsync
 my @keysOld = grep { !exists( $DBMsync{$_} ) } keys(%DBM);
@@ -247,7 +256,8 @@ else {
 #    100 miles           0            # show anything within 100 miles/km any size
 
 print( TXT "The full Bulletin is available via the Internet at:\n" );
-print( TXT "ftp://hazards.cr.usgs.gov/cnss/cnss_14.fing\n\n" );
+#print( TXT "ftp://hazards.cr.usgs.gov/cnss/cnss_14.fing\n\n" );
+print( TXT "$USGS_URL\n\n" );
 print( TXT "Updated as of " . scalar( localtime() ) . ".\n\n" );
 print( TXT "  DATE-(UTC)-TIME     LAT    LON     DEP   MAG     COMMENTS\n" );
 print( TXT "yyyy/mm/dd hh:mm:ss   deg.   deg.     km\n" );
@@ -274,26 +284,58 @@ exit;
 
 sub parse_quake {
     my ($line) = @_;
-
+    # Original data format
     #   GMT                lat     lon   depth mag   source  location
     #2009/02/11 01:23:56  34.02N 117.24W  12.6 1.6      CI: GREATER LOS ANGELES AREA, CALIF.
     #2009/01/04 21:57:49  33.98N 116.78W  16.7 1.5      CI: SOUTHERN CALIFORNIA
     #
     #  0   1   2    3      4        5      6         7       8     9
     #[gmt,lat,lon,depth,magnitude,source,location,distance,speak,spoken]
-
+    
+    # Rick new data format from $USGS_URL jammed into old format for simplicity
+    #  0      1         2         3     4     5      6   7   8    9   10  11  12    13    14      15            16        17        18     19      20            21
+    #*time,*latitude,*longitude,*depth,*mag,magType,nst,gap,dmin,rms,net,id,updated,place,type,horizontalError,depthError,magError,magNst,status,locationSource,magSource
+    #     0                    1         2      3  4  5 678  9   10    11             12                      13                            14       15 16 1718 19     20 21
+    #2020-10-31T21:37:02.639Z,62.3161,-146.6143,0,1.7,ml,,,,1.21,ak,ak020e0rmw0k,2020-10-31T21:42:05.909Z,"5 km NW of Lake Louise, Alaska",earthquake,,0.5,,,automatic,ak,ak
+    my @rev_line = split(',',$line);
+    # Convert lat/long from decimal to Hours/Minutes (US specific)
+    my $tmp_lat_hour =  abs(int($rev_line[1]));
+    #my $tmp_lat_minutes = abs(int(($rev_line[1] - int($rev_line[1]))) *60);
+    my $tmp_lat_minutes = (abs($rev_line[1]) - int(abs($rev_line[1])) ) *60;
+    my $tmp_lat = $tmp_lat_hour . '.' . $tmp_lat_minutes;
+    my $tmp_long_hour =  abs(int($rev_line[2]));
+    my $tmp_long_minutes = (abs($rev_line[2]) - int(abs($rev_line[2])) ) *60;
+    my $tmp_long = $tmp_long_hour . '.' . $tmp_long_minutes;
+    
+    # Format lat/long to 6 characters hhh.mm
+    $tmp_lat = sprintf("%06.2f", $tmp_lat);
+    $tmp_long = sprintf("%06.2f", $tmp_long);
+    # Format depth to 5 characters
+    $rev_line[3] = sprintf("%05.2f",  $rev_line[3]);
+    # format magnitide to 4 characters
+    $rev_line[4] = sprintf("%04.2f",  $rev_line[4]); 
+    # Location
+    my $tmp_location = $rev_line[13] . ',' . $rev_line[14];
+    $tmp_location =~ s/"//g; #" Just here to clean up the editor
+    
+    #          date/time            lat                   long                        depth             mag                          src             location (in two parts)
+    $line = $rev_line[0] . ' ' . $tmp_lat . 'N' . ' ' . $tmp_long . 'W' . ' ' . $rev_line[3] . ' ' . $rev_line[4] . ' ' . $rev_line[21] . ': ' . $tmp_location ;
+    
     if ( my ( $qdate, $qtime, $qlatd, $qnoso, $qlong, $qeawe, $qdept, $qmagn, $qsrc, $qloca ) =
-        $line =~ m!^(.{10})\s(.{8})\s(.{6})([NS])\s(.{6})([EW])\s(.{5})\s(.{3})\s(.{7}):\s(.+)! )
+        #$line =~ m!^(.{10})\s(.{8})\s(.{6})([NS])\s(.{6})([EW])\s(.{5})\s(.{3})\s(.{7}):\s(.+)! )
+        $line =~ m!^(.{10})T(.{12})Z\s(.{6})([NS])\s(.{6})([EW])\s(.{5})\s(.{4})\s(.{2}):\s(.+)! )
+        #               0     0        1             2            3        4      21     13
     {
 
         #convert timestamp to gmt
-        my ( $qyear, $qmnth, $qday )  = $qdate =~ m!(\S+)/(\S+)/(\S+)!;
+        #my ( $qyear, $qmnth, $qday )  = $qdate =~ m!(\S+)/(\S+)/(\S+)!;
+        my ( $qyear, $qmnth, $qday )  = $qdate =~ m!(\S+)-(\S+)-(\S+)!;
         my ( $qhour, $qminu, $qseco ) = $qtime =~ m!(\S+):(\S+):(\S+)!;
         my $qgmt;
         eval { $qgmt = timegm( $qseco, $qminu, $qhour, $qday, $qmnth - 1, $qyear ); };
         if ($@) {
-            print("$Pgm_Name: timegm() failed to parse date and time\n")
-              if $parms{v};
+            #print("$Pgm_Name: timegm() failed to parse date and time\n") if $parms{v};
+            print("$Pgm_Name: timegm() failed to parse date and time\n");
             return 0;    #failed to parse
         }
 
@@ -302,8 +344,8 @@ sub parse_quake {
         $qlong += 0;
         $qlatd *= -1 if ( $qnoso eq "S" );
         $qlong *= -1 if ( $qeawe eq "W" );
-
-        #Make sure the magnitued and depth are a number
+        
+        #Make sure the magnitude and depth are a number
         $qdept += 0;
         $qmagn += 0;
 
@@ -317,7 +359,8 @@ sub parse_quake {
         return ( [ $qgmt, $qlatd, $qlong, $qdept, $qmagn, $qsrc, $qloca ] );
     }
     else {
-        print("$Pgm_Name: Line does not match expected format\n") if $parms{v};
+        #print("$Pgm_Name: Line does not match expected format\n") if $parms{v};
+        print("$Pgm_Name: Line does not match expected format\n");
         return 0;
     }
 }
