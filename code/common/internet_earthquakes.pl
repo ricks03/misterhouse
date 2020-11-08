@@ -35,6 +35,7 @@
 =begin comment
 
 code/common/internet_quakes.pl, bin/get_earthquakes
+ 1.7 Cleaned up the Respond code so that it actaully works.
  1.6 Changed spoken quake count logic so that quakes exceeding the 
      spoken limit will still be marked spoken.  Otherwise each hour
      the remainder will be spoken.  It is possible for the old logic
@@ -127,39 +128,48 @@ $v_earthquakes->set_authority('anyone');
 
 $state = said $v_earthquakes;
 
+
 if ( $state eq 'Get' ) {
     if (&net_connect_check) {
         if ( !$p_earthquakes->done() ) {
-            $v_earthquakes->respond("app=earthquakes Can not get earthquakes. Get earthquakes is already running...");
+            #$v_earthquakes->respond("app=earthquakes Can not get earthquakes. Get earthquakes is already running...");
+            respond("app=earthquakes Can not get earthquakes. Get earthquakes is already running...");
         }
         else {
             start $p_earthquakes;
-            $v_earthquakes->respond("app=earthquakes Checking for recent earthquakes...");
+            #$v_earthquakes->respond("app=earthquakes Checking for recent earthquakes...");
+            # Rick Doesn't need to say this each time it runs!!
+            #respond("app=earthquakes Checking for recent earthquakes...");
         }
     }
 }
 elsif ( $state eq 'Clear' ) {
     if ( !$p_earthquakes->done() ) {
-        $v_earthquakes->respond("app=earthquakes Can not clear earthquakes. Get earthquakes is running...");
+#        $v_earthquakes->respond("app=earthquakes Can not clear earthquakes. Get earthquakes is running...");
+        respond("app=earthquakes Can not clear earthquakes. Get earthquakes is running...");
     }
     else {
-        $v_earthquakes->respond("app=earthquakes Clearing recent earthquakes ...");
+        #$v_earthquakes->respond("app=earthquakes Clearing recent earthquakes ...");
+        respond("app=earthquakes Clearing recent earthquakes ...");
         unlink $f_earthquakes_dbm;
         delete $Save{quakes};    #Delete the old save var if it exists
     }
 }
 elsif ( $state eq 'Read' ) {
     if ( $speech = earthquake_read( 'all', $f_earthquakes_dbm, $Earthquake_Count, $Earthquake_Unit_Name ) ) {
-        $v_earthquakes->respond("app=earthquakes $speech");
+        #$v_earthquakes->respond("app=earthquakes $speech");
+        respond("app=earthquakes $speech");
     }
     else {
-        $v_earthquakes->respond('app=earthquakes No recent earthquakes to report.');
+        #$v_earthquakes->respond('app=earthquakes No recent earthquakes to report.');
+        respond('app=earthquakes No recent earthquakes to report.');
     }
 }
 
 if ( done_now $p_earthquakes) {
     if ( $speech = earthquake_read( 'new', $f_earthquakes_dbm, $Earthquake_Count, $Earthquake_Unit_Name ) ) {
-        $v_earthquakes->respond("app=earthquakes connected=0 important=1 $speech");
+        #$v_earthquakes->respond("app=earthquakes connected=0 important=1 $speech");
+        respond("app=earthquakes connected=0 important=1 $speech");
     }
 }
 
